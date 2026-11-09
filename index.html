@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пошук товарів OLX</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔎</text></svg>">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <button id="btnFilters" class="icon-btn only-mobile" title="Фільтри">☰</button>
+  <h1>🔎 Пошук товарів OLX</h1>
+  <div id="updated" class="muted"></div>
+  <div class="spacer"></div>
+  <div class="view-switch" role="tablist">
+    <button data-view="list" class="active">Список</button>
+    <button data-view="map">Карта</button>
+    <button data-view="dyn">Динаміка цін</button>
+  </div>
+</header>
+
+<nav id="cats" class="cats"></nav>
+<div id="warnings"></div>
+
+<main class="layout">
+  <aside id="sidebar" class="sidebar">
+    <div class="side-head only-mobile"><b>Фільтри</b><button id="btnCloseFilters" class="icon-btn">✕</button></div>
+    <label class="fld"><span>Пошук у назві та описі</span>
+      <input id="fQ" type="search" placeholder="напр. rtx 3060, samsung 55"></label>
+    <div class="fld"><span>Ціна, грн</span>
+      <div class="range"><input id="fPmin" type="number" placeholder="від" min="0"><input id="fPmax" type="number" placeholder="до" min="0"></div></div>
+    <label class="fld"><span>Опубліковано</span>
+      <select id="fAge">
+        <option value="0">за весь час</option>
+        <option value="1">за останню годину</option>
+        <option value="3">за 3 години</option>
+        <option value="24">за добу</option>
+        <option value="72">за 3 дні</option>
+        <option value="168">за тиждень</option>
+        <option value="new">нові з мого останнього візиту</option>
+      </select></label>
+    <div class="fld checks">
+      <label><input id="fDrop" type="checkbox"> ціна знижувалась</label>
+      <label><input id="fPhoto" type="checkbox"> лише з фото</label>
+      <label><input id="fZone" type="checkbox" checked> лише в моїй зоні на карті</label>
+      <label><input id="fInactive" type="checkbox"> показати зняті з продажу</label>
+    </div>
+    <label class="fld"><span>Продавець</span>
+      <select id="fBiz"><option value="">усі</option><option value="0">приватна особа</option><option value="1">бізнес</option></select></label>
+    <div id="fSubs"></div>
+    <div id="fParams"></div>
+    <button id="btnReset" class="btn ghost wide">Скинути фільтри</button>
+  </aside>
+
+  <section class="content">
+    <div class="toolbar">
+      <div id="count" class="count"></div>
+      <div class="spacer"></div>
+      <label class="sort">Сортування
+        <select id="fSort">
+          <option value="new">спочатку нові</option>
+          <option value="cheap">спочатку дешеві</option>
+          <option value="exp">спочатку дорогі</option>
+          <option value="drop">найбільше знизилась ціна</option>
+        </select></label>
+    </div>
+
+    <div id="zoneBar" class="zone-bar">
+      <span id="zoneInfo">Зона пошуку не задана — показано всю зону збору.</span>
+      <button class="btn small" data-goto-map>Задати зону на карті</button>
+    </div>
+
+    <div id="viewList" class="view">
+      <div id="list" class="grid"></div>
+      <button id="btnMore" class="btn wide" hidden>Показати ще</button>
+    </div>
+
+    <div id="viewMap" class="view" hidden>
+      <div class="map-help">Намалюйте зону пошуку інструментами зліва на карті: прямокутник, коло або довільний багатокутник будь-якого розміру. Зон може бути кілька. Пунктир — межа зони збору оголошень.
+        <button id="btnClearZones" class="btn small ghost">Очистити зони</button></div>
+      <div id="map"></div>
+    </div>
+
+    <div id="viewDyn" class="view" hidden>
+      <p class="muted">Графіки рахуються для оголошень, що проходять поточні фільтри та зону пошуку.</p>
+      <div class="chart-box"><h3>Медіанна ціна, грн</h3><canvas id="chMedian"></canvas></div>
+      <div class="chart-box"><h3>Нові та зняті оголошення за день</h3><canvas id="chFlow"></canvas></div>
+      <div class="chart-box"><h3>Розподіл цін зараз</h3><canvas id="chHist"></canvas></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="dlg">
+  <div class="dlg-head"><h2 id="dlgTitle"></h2><button class="icon-btn" id="dlgClose">✕</button></div>
+  <div id="dlgBody"></div>
+</dialog>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

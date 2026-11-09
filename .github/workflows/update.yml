@@ -1,0 +1,71 @@
+name: Оновлення оголошень
+
+on:
+  schedule:
+    - cron: '7 * * * *'   # щогодини (UTC), о :07
+  workflow_dispatch:       # кнопка «Run workflow» для ручного запуску
+  push:
+    paths: ['config.json', 'index.html', 'app.js', 'style.css', 'scraper/**', '.github/workflows/update.yml']
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: olx-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Попередні дані (гілка data)
+        run: |
+          mkdir -p data
+          if git ls-remote --exit-code --heads origin data >/dev/null; then
+            git fetch --depth 1 origin data
+            git --work-tree=data checkout FETCH_HEAD -- .
+            git reset -q
+          fi
+          ls -la data
+
+      - name: Тести збирача
+        run: python -m unittest discover -s scraper
+
+      - name: Збір оголошень з OLX
+        run: python scraper/olx_scraper.py --config config.json --data data
+
+      - name: Зберегти дані (гілка data, без історії)
+        run: |
+          cd data
+          git init -q
+          git checkout -q -b data
+          git add -A
+          git -c user.name="olx-bot" -c user.email="actions@github.com" commit -qm "Дані $(date -u +%F_%H:%M)"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
+          rm -rf .git
+
+      - name: Зібрати сайт
+        run: |
+          mkdir -p _site/data
+          cp index.html app.js style.css _site/
+          cp data/meta.json data/stats.json data/cat-*.json _site/data/
+          du -sh _site/data
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deploy
+        uses: actions/deploy-pages@v4
