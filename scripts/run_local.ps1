@@ -1,10 +1,10 @@
 ﻿# Збір оголошень на вашому комп'ютері (Windows) і відправка даних у гілку data на GitHub.
 # Потрібні: Git for Windows (з входом у GitHub) і Python 3.
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"  # git пише звичайні повідомлення в stderr
 $env:PYTHONIOENCODING = "utf-8"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Set-Location (Join-Path $PSScriptRoot "..")
-git pull -q --ff-only 2>$null
+git pull -q --ff-only
 $work = ".data-work"
 if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 New-Item -ItemType Directory $work | Out-Null
@@ -22,6 +22,7 @@ Push-Location $work
 git init -q; git checkout -q -b data; git add -A
 git -c user.name="olx-bot" -c user.email="olx-bot@localhost" commit -qm "Дані $(Get-Date -Format 'yyyy-MM-dd_HH:mm')"
 git push -qf $origin data
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Не вдалося відправити дані на GitHub" }
 Pop-Location
 Remove-Item -Recurse -Force $work
 Write-Host "Готово: $(Get-Date)"
