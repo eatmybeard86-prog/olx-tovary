@@ -164,6 +164,13 @@ class ScraperTest(unittest.TestCase):
         with open(os.path.join(self.tmp, "meta.json"), encoding="utf-8") as f:
             self.assertIn("403", " ".join(json.load(f)["warnings"]))
 
+    def test_disabled_category_skipped(self):
+        cfg = json.loads(json.dumps(CFG))
+        cfg["categories"][0]["enabled"] = False
+        S.Scraper(cfg, self.tmp, http=FakeHttp({37: [offer(1, 501, 100)]}), now=NOW).run()
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "cat-computers.json")))
+        self.assertEqual([o["id"] for o in self.load("electronics")["offers"]], [1])
+
     def test_area_shapes(self):
         self.assertTrue(S.in_area({"type": "bbox", "south": 50, "north": 51, "west": 30, "east": 31}, 50.5, 30.5))
         poly = {"type": "polygon", "points": [[50, 30], [51, 30], [51, 31], [50, 31]]}

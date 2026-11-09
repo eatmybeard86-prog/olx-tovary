@@ -265,7 +265,8 @@ class Scraper:
         self.state.setdefault("leaves", {})       # id листової категорії → ланцюг, назва
         self.state.setdefault("paths", {})        # шлях → номер категорії
         self.state.setdefault("region_counts", {})
-        self.groups = cfg["categories"]
+        # Збираються лише увімкнені категорії ("enabled": true у config.json)
+        self.groups = [g for g in cfg["categories"] if g.get("enabled", True)]
         self.cats = {}
         for g in self.groups:
             d = load_json(os.path.join(data_dir, f"cat-{g['key']}.json"), {})
