@@ -2,7 +2,7 @@ name: Оновлення оголошень
 
 on:
   schedule:
-    - cron: '7 * * * *'   # щогодини (UTC), о :07
+    - cron: '25 * * * *'  # щогодини (UTC), о :25 — публікує свіжі дані з гілки data
   workflow_dispatch:       # кнопка «Run workflow» для ручного запуску
   push:
     paths: ['config.json', 'index.html', 'app.js', 'style.css', 'scraper/**', '.github/workflows/update.yml']
@@ -43,10 +43,15 @@ jobs:
       - name: Тести збирача
         run: python -m unittest discover -s scraper
 
+      # OLX не пускає запити з серверів GitHub (відповідає 403), тому за замовчуванням
+      # оголошення збирає ваш комп'ютер (scripts/run_local.*), а тут лише публікується сайт.
+      # Щоб збирати тут, створіть змінну репозиторію SCRAPE_IN_CLOUD = true.
       - name: Збір оголошень з OLX
+        if: vars.SCRAPE_IN_CLOUD == 'true'
         run: python scraper/olx_scraper.py --config config.json --data data
 
       - name: Зберегти дані (гілка data, без історії)
+        if: vars.SCRAPE_IN_CLOUD == 'true'
         run: |
           cd data
           git init -q
@@ -60,7 +65,8 @@ jobs:
         run: |
           mkdir -p _site/data
           cp index.html app.js style.css _site/
-          cp data/meta.json data/stats.json data/cat-*.json _site/data/
+          cp data/meta.json data/stats.json data/cat-*.json _site/data/ 2>/dev/null || echo "Даних ще немає"
+          ls data/*.json >/dev/null 2>&1 || true
           du -sh _site/data
 
       - uses: actions/configure-pages@v5

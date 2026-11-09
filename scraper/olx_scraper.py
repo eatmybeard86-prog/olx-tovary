@@ -73,6 +73,8 @@ class Http:
                 last = e.code
                 if e.code in (400, 404, 410):
                     return e.code, None
+                if e.code == 403 and attempt >= 1:
+                    return e.code, None
                 if e.code in (403, 429, 500, 502, 503, 504):
                     time.sleep(2 ** attempt * 2)
                     continue
@@ -269,6 +271,7 @@ class Scraper:
         self.stats = load_json(os.path.join(data_dir, "stats.json"), {})
         self.rates = dict(cfg.get("fallback_rates") or {"UAH": 1})
         self.warnings = []
+        self.blocked = False  # OLX відповідає 403 — далі не стукаємо
         self.counters = {"new": 0, "updated": 0, "price_changes": 0, "removed": 0,
                          "checked": 0, "listing_requests": 0}
 
@@ -307,7 +310,7 @@ class Scraper:
         path = path.strip("/")
         if path in self.state["paths"]:
             return self.state["paths"][path]
-        failed = self.state.setdefault("paths_failed", {})
+        failed = self.state.setdefault("failed_paths", {})
         if failed.get(path, 0) > self.now - 86400:
             return None  # не повторюємо невдалий пошук частіше ніж раз на добу
         segs = path.split("/")
@@ -315,7 +318,14 @@ class Scraper:
         if len(segs) == 1 and segs[0] in KNOWN_TOP:
             cid = KNOWN_TOP[segs[0]]
         if cid is None:
+            if self.blocked:
+                return None
             st, js = self.http.get_json(f"{API}/friendly-links/query-params/{path}/")
+            if st == 403:
+                self.blocked = True
+                self.warnings.append("OLX не пускає запити з цієї мережі (403). Запускайте збирач "
+                                     "на своєму комп'ютері: scripts/run_local.")
+                return None
             cid = ((js or {}).get("data") or {}).get("category_id")
         if cid is None and len(segs) >= 2:
             parent = self.resolve_path("/".join(segs[:-1]))
@@ -325,7 +335,7 @@ class Scraper:
             self.state["paths"][path] = int(cid)
             failed.pop(path, None)
             log(f"  категорія {path} → {cid}")
-        else:
+        elif not self.blocked:
             failed[path] = self.now
         return int(cid) if cid else None
 
@@ -335,6 +345,8 @@ class Scraper:
             st, js = self.http.get_json(f"{API}/offers/", {
                 "category_id": parent_id, "limit": PAGE_LIMIT, "offset": page * PAGE_LIMIT,
                 "sort_by": "created_at:desc"})
+            if st == 403:
+                self.blocked = True
             if not js or not js.get("data"):
                 break
             for o in js["data"]:
@@ -354,7 +366,7 @@ class Scraper:
                 cid = self.resolve_path(p)
                 if cid:
                     ids.append(cid)
-                else:
+                elif not self.blocked:
                     self.warnings.append(f"Не вдалося визначити категорію OLX «{p}» ({g['name']}). "
                                          f"Вкажіть її номер у config.json (\"ids\").")
             g["_ids"] = list(dict.fromkeys(ids))
@@ -451,8 +463,15 @@ class Scraper:
                       "sort_by": "created_at:desc"}
             if reg:
                 params["region_id"] = reg
+            if self.blocked:
+                return
             st, js = self.http.get_json(f"{API}/offers/", params)
             self.counters["listing_requests"] += 1
+            if st == 403:
+                self.blocked = True
+                self.warnings.append("OLX не пускає запити з цієї мережі (403). Запускайте збирач "
+                                     "на своєму комп'ютері: scripts/run_local.")
+                return
             if not js or not js.get("data"):
                 if st and st not in (200, 400, 404):
                     self.warnings.append(f"OLX відповів {st} на пошук у категорії {cid}")
@@ -487,6 +506,8 @@ class Scraper:
 
     # ---------------------------------------------------------------- перевірка
     def check_existing(self):
+        if self.blocked:
+            return
         budget = int(self.cfg.get("check_budget_per_run", 1500))
         workers = int(self.cfg.get("check_workers", 4))
         cands = []

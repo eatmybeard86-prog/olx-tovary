@@ -149,6 +149,21 @@ class ScraperTest(unittest.TestCase):
         self.run_once(FakeHttp({37: []}), now=NOW + 40 * 86400)
         self.assertEqual(self.load("electronics")["offers"], [])
 
+    def test_blocked_stops_quickly(self):
+        class Blocked(FakeHttp):
+            def get_json(self, url, params=None, retries=4):
+                if "bank.gov.ua" in url:
+                    return 200, []
+                self.requests += 1
+                return 403, None
+        h = Blocked({})
+        self.run_once(h)
+        self.assertLessEqual(h.requests, 3)
+        with open(os.path.join(self.tmp, "state.json"), encoding="utf-8") as f:
+            self.assertEqual(json.load(f).get("failed_paths", {}), {})
+        with open(os.path.join(self.tmp, "meta.json"), encoding="utf-8") as f:
+            self.assertIn("403", " ".join(json.load(f)["warnings"]))
+
     def test_area_shapes(self):
         self.assertTrue(S.in_area({"type": "bbox", "south": 50, "north": 51, "west": 30, "east": 31}, 50.5, 30.5))
         poly = {"type": "polygon", "points": [[50, 30], [51, 30], [51, 31], [50, 31]]}
