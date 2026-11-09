@@ -1,6 +1,8 @@
-# Збір оголошень на вашому комп'ютері (Windows) і відправка даних у гілку data на GitHub.
+﻿# Збір оголошень на вашому комп'ютері (Windows) і відправка даних у гілку data на GitHub.
 # Потрібні: Git for Windows (з входом у GitHub) і Python 3.
 $ErrorActionPreference = "Stop"
+$env:PYTHONIOENCODING = "utf-8"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 Set-Location (Join-Path $PSScriptRoot "..")
 git pull -q --ff-only 2>$null
 $work = ".data-work"

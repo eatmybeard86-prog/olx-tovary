@@ -1,4 +1,4 @@
-# Створює завдання Windows, яке щогодини запускає run_local.ps1 (поки комп'ютер увімкнений).
+﻿# Створює завдання Windows, яке щогодини запускає run_local.ps1 (поки комп'ютер увімкнений).
 $script = Join-Path $PSScriptRoot "run_local.ps1"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$script`""
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).Date.AddMinutes(5) -RepetitionInterval (New-TimeSpan -Hours 1)
