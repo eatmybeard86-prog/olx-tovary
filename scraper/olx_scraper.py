@@ -36,8 +36,14 @@ PAGE_LIMIT = 50
 MAX_OFFSET = 1000  # OLX віддає не більше 1000 оголошень на один запит-пошук
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/130.0 Safari/537.36")
-# Відомі номери верхніх категорій (перевірено через API OLX)
-KNOWN_TOP = {"elektronika": 37, "transport": 1532, "zapchasti-dlya-transporta": 3}
+# Відомі номери категорій (перевірено через API OLX 09.11.2026); інші шукаються автоматично
+KNOWN_PATHS = {
+    "elektronika": 37, "transport": 1532, "zapchasti-dlya-transporta": 3, "dom-i-sad": 899,
+    "elektronika/kompyutery-i-komplektuyuschie": 38, "elektronika/noutbuki-i-aksesuary": 1502,
+    "elektronika/tv-videotehnika": 420, "elektronika/tehnika-dlya-doma": 383,
+    "elektronika/tehnika-dlya-kuhni": 369, "elektronika/klimaticheskoe-oborudovanie": 395,
+    "zapchasti-dlya-transporta/shiny-diski-i-kolesa": 270, "dom-i-sad/mebel": 57,
+}
 KYIV_TZ = timezone(timedelta(hours=2))
 
 
@@ -314,9 +320,7 @@ class Scraper:
         if failed.get(path, 0) > self.now - 86400:
             return None  # не повторюємо невдалий пошук частіше ніж раз на добу
         segs = path.split("/")
-        cid = None
-        if len(segs) == 1 and segs[0] in KNOWN_TOP:
-            cid = KNOWN_TOP[segs[0]]
+        cid = KNOWN_PATHS.get(path)
         if cid is None:
             if self.blocked:
                 return None
