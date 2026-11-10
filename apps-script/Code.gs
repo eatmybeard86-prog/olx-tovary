@@ -36,7 +36,7 @@ const DEFAULT_CATEGORIES = [
 const API = 'https://www.olx.ua/api/v1';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36';
 const HEADERS = { 'User-Agent': UA, 'Accept': 'application/json', 'Accept-Language': 'uk-UA,uk;q=0.9' };
-const MAX_RUN_MS = 5 * 60 * 1000;
+const MAX_RUN_MS = 4 * 60 * 1000; // ліміт Google — 6 хв; лишаємо запас на збереження
 const RUN_START = Date.now();
 const timeLeft_ = () => MAX_RUN_MS - (Date.now() - RUN_START);
 
@@ -115,8 +115,10 @@ function getGroups_() {
   }));
 }
 
+// Не блокуюче повідомлення: модальне вікно чекало б натискання «ОК» і з'їдало час виконання.
 function alert_(msg) {
-  try { SpreadsheetApp.getUi().alert(msg); } catch (e) { Logger.log(msg); }
+  console.log(msg);
+  try { SpreadsheetApp.getActive().toast(msg, 'OLX', 30); } catch (e) { /* немає таблиці */ }
 }
 
 function log_(msg) {
@@ -177,6 +179,7 @@ function qs_(p) {
 function olx_(path, params) {
   const url = API + path + (params ? '?' + qs_(params) : '');
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0 && timeLeft_() < 45000) break;
     let r;
     try { r = UrlFetchApp.fetch(url, { headers: HEADERS, muteHttpExceptions: true }); }
     catch (e) { Utilities.sleep(1500); continue; }
@@ -415,7 +418,8 @@ Collector_.prototype.upsert = function (gkey, raw) {
 Collector_.prototype.collect = function () {
   const last = this.state.last_run || 0;
   const cutoff = last ? last - 3 * 3600 : 0;
-  const pages = Math.min(Number(this.s.PAGES) || 10, 20);
+  // Перший збір коротший (4 сторінки): решта історії набереться в наступні години.
+  const pages = last ? Math.min(Number(this.s.PAGES) || 10, 20) : 4;
   const done = {};
   for (const g of this.groups) {
     for (const cid of g.ids) {
@@ -423,7 +427,7 @@ Collector_.prototype.collect = function () {
       done[cid] = true;
       let kept = 0;
       for (let page = 0; page < pages; page++) {
-        if (this.blocked || timeLeft_() < 90000) break;
+        if (this.blocked || timeLeft_() < 60000) break;
         const r = olx_('/offers/', {
           offset: page * 50, limit: 50, category_id: cid,
           city_id: this.s.OLX_CITY_ID, distance: this.s.RADIUS_KM, sort_by: 'created_at:desc',
