@@ -181,28 +181,14 @@ function doGet(e) {
   try {
     if (p.action === 'settings') return json_(siteSettings_());
     if (p.action === 'save' || p.action === 'collect') {
-      const pin = checkPin_(p.pin);
-      if (pin.error) return json_(pin);
       if (p.action === 'save') saveSiteSettings_(p);
       else scheduleCollect_();
-      return json_(Object.assign({ ok: true }, siteSettings_(), pin.created ? { pinCreated: true } : {}));
+      return json_(Object.assign({ ok: true }, siteSettings_()));
     }
   } catch (err) {
     return json_({ error: err.message });
   }
   return json_({ ok: true, hint: 'Додайте ?f=meta.json' });
-}
-
-// PIN захищає зміну налаштувань із сайту: адреса веб-застосунку видна в коді сайту.
-// Перший збережений PIN запам'ятовується; скинути — видалити властивість SITE_PIN у властивостях скрипта.
-function checkPin_(pin) {
-  pin = String(pin || '').trim();
-  if (!/^\d{4,12}$/.test(pin)) return { error: 'Введіть PIN — від 4 до 12 цифр.' };
-  const props = PropertiesService.getScriptProperties();
-  const saved = props.getProperty('SITE_PIN');
-  if (!saved) { props.setProperty('SITE_PIN', pin); return { created: true }; }
-  if (saved !== pin) return { error: 'Невірний PIN.' };
-  return {};
 }
 
 function siteSettings_() {
@@ -212,7 +198,6 @@ function siteSettings_() {
   return {
     categories: getGroups_().map(g => ({ key: g.key, name: g.name, icon: g.icon, on: g.on })),
     city: Number(s.OLX_CITY_ID), radius: Number(s.RADIUS_KM), cities: CITIES,
-    hasPin: !!PropertiesService.getScriptProperties().getProperty('SITE_PIN'),
     lastRun, collectQueued: running,
   };
 }

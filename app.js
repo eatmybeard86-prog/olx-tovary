@@ -515,7 +515,6 @@
   }
   function renderSettings(msg) {
     const s = setState;
-    const pin = LS.get('pin', '');
     $('#setBody').innerHTML = `
       <div class="fld"><span>Категорії, які збирати</span>
         <div class="set-cats">${s.categories.map((c) => `<label><input type="checkbox" data-setcat="${esc(c.key)}" ${c.on ? 'checked' : ''}> ${esc(c.icon)} ${esc(c.name)}</label>`).join('')}</div></div>
@@ -523,8 +522,6 @@
         <label class="fld" style="flex:2"><span>Місто</span><select id="setCity">${s.cities.map((c) => `<option value="${c.id}" ${c.id === s.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
         <label class="fld" style="flex:1"><span>Радіус, км</span><input id="setRadius" type="number" min="1" max="300" value="${s.radius}"></label>
       </div>
-      <label class="fld"><span>${s.hasPin ? 'PIN для змін' : 'Придумайте PIN (4–12 цифр) — він захистить налаштування від чужих'}</span>
-        <input id="setPin" type="password" inputmode="numeric" autocomplete="off" value="${esc(pin)}"></label>
       <p class="muted">Останній збір: ${s.lastRun ? dateStr(s.lastRun) : 'ще не було'}. Далі збір іде щогодини сам. Зміна міста чи радіусу очищає старі оголошення.</p>
       <p class="set-msg" id="setMsg" ${msg ? '' : 'hidden'}>${esc(msg || '')}</p>
       <div class="range">
@@ -535,17 +532,15 @@
     $('#setRun').onclick = () => saveSettings(true);
   }
   async function saveSettings(run) {
-    const pin = $('#setPin').value.trim();
     const cats = [...document.querySelectorAll('[data-setcat]:checked')].map((i) => i.dataset.setcat);
     if (!cats.length) return renderSettingsMsg('Виберіть хоча б одну категорію.');
     $('#setSave').disabled = $('#setRun').disabled = true;
     try {
-      let r = await api({ action: 'save', pin, cats: cats.join(','), city: $('#setCity').value, radius: $('#setRadius').value });
+      let r = await api({ action: 'save', cats: cats.join(','), city: $('#setCity').value, radius: $('#setRadius').value });
       if (r.error) return renderSettingsMsg('⚠️ ' + r.error);
-      LS.set('pin', pin);
       setState = r;
       if (run) {
-        r = await api({ action: 'collect', pin });
+        r = await api({ action: 'collect' });
         if (r.error) return renderSettingsMsg('⚠️ ' + r.error);
         setState = r;
         renderSettings('✅ Збережено. Збір запущено — це до 4 хвилин. Сторінка оновиться сама, коли з\'являться дані.');
