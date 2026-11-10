@@ -118,3 +118,5 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 #dlgSet #setBody { padding: 0 16px 16px; }
 .opt-search { margin-top: 6px; padding: 5px 8px; font-size: 13px; }
 .fgroup .opts label[hidden] { display: none; }
+.set-cities { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.set-cities input:disabled + * , .set-cities label:has(input:disabled) { opacity: .45; }

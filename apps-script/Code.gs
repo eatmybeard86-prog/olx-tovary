@@ -11,11 +11,8 @@
 const SHEETS = { SETTINGS: 'Налаштування', CATEGORIES: 'Категорії', LOG: 'Лог' };
 
 const DEFAULT_SETTINGS = [
-  ['CITY_NAME', 'Дніпро', 'Назва для сайту'],
-  ['OLX_CITY_ID', 121, 'Місто на OLX (121 = Дніпро, 268 = Київ, 280 = Харків, 62 = Одеса, 176 = Львів, 194 = Запоріжжя; поміняйте й CENTER_LAT/LNG)'],
+  ['OLX_CITY_IDS', '121', 'Міста на OLX через кому, до 5 (121 Дніпро, 268 Київ, 280 Харків, 62 Одеса, 176 Львів, 194 Запоріжжя…). Простіше вибрати на сайті'],
   ['RADIUS_KM', 50, 'Радіус пошуку від міста, км (OLX шукає в цьому радіусі)'],
-  ['CENTER_LAT', 48.4647, 'Центр карти на сайті'],
-  ['CENTER_LNG', 35.0462, ''],
   ['PAGES', 10, 'Скільки сторінок по 50 найновіших оголошень перевіряти в кожній категорії за один збір'],
   ['CHECK_PER_RUN', 400, 'Скільки вже відомих оголошень перевіряти на актуальність і зміну ціни за один збір'],
   ['KEEP_INACTIVE_DAYS', 21, 'Скільки днів пам\'ятати зняті оголошення (для графіків динаміки)'],
@@ -164,7 +161,23 @@ const CITIES = [
   { id: 62, name: 'Одеса', lat: 46.4825, lng: 30.7233 },
   { id: 176, name: 'Львів', lat: 49.8397, lng: 24.0297 },
   { id: 194, name: 'Запоріжжя', lat: 47.8388, lng: 35.1396 },
+  { id: 340, name: 'Кривий Ріг', lat: 47.9105, lng: 33.3918 },
+  { id: 1, name: 'Кам\'янське', lat: 48.5132, lng: 34.6031 },
+  { id: 284, name: 'Полтава', lat: 49.5883, lng: 34.5514 },
+  { id: 106, name: 'Миколаїв', lat: 46.975, lng: 31.9946 },
+  { id: 313, name: 'Вінниця', lat: 49.2331, lng: 28.4682 },
+  { id: 145, name: 'Черкаси', lat: 49.4444, lng: 32.0598 },
+  { id: 178, name: 'Чернігів', lat: 51.4982, lng: 31.2893 },
+  { id: 324, name: 'Житомир', lat: 50.2547, lng: 28.6587 },
 ];
+const MAX_CITIES = 5;
+
+// Вибрані міста (до 5). Підтримує і старе налаштування OLX_CITY_ID.
+function cities_(s) {
+  const raw = String(s.OLX_CITY_IDS != null && s.OLX_CITY_IDS !== '' ? s.OLX_CITY_IDS : (s.OLX_CITY_ID || 121));
+  const ids = raw.split(/[,; ]+/).map(Number).filter(n => n > 0).slice(0, MAX_CITIES);
+  return ids.map(id => CITIES.find(c => c.id === id) || { id, name: 'Місто ' + id, lat: 48.5, lng: 32 });
+}
 
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
@@ -197,7 +210,7 @@ function siteSettings_() {
   const running = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'collectNow');
   return {
     categories: getGroups_().map(g => ({ key: g.key, name: g.name, icon: g.icon, on: g.on })),
-    city: Number(s.OLX_CITY_ID), radius: Number(s.RADIUS_KM), cities: CITIES,
+    selected: cities_(s).map(c => c.id), radius: Number(s.RADIUS_KM), cities: CITIES, maxCities: MAX_CITIES,
     lastRun, collectQueued: running,
   };
 }
@@ -214,10 +227,10 @@ function saveSiteSettings_(p) {
       }
     }
   }
-  const city = CITIES.find(c => c.id === Number(p.city));
+  const ids = String(p.cities || '').split(',').map(Number).filter(id => CITIES.some(c => c.id === id)).slice(0, MAX_CITIES);
   const radius = Math.max(1, Math.min(300, Number(p.radius) || 50));
   const vals = { RADIUS_KM: radius };
-  if (city) Object.assign(vals, { OLX_CITY_ID: city.id, CITY_NAME: city.name, CENTER_LAT: city.lat, CENTER_LNG: city.lng });
+  if (ids.length) vals.OLX_CITY_IDS = ids.join(', ');
   const st = ss.getSheetByName(SHEETS.SETTINGS);
   if (st) {
     const rows = st.getDataRange().getValues();
@@ -227,7 +240,7 @@ function saveSiteSettings_(p) {
       else st.appendRow([k, vals[k], '']);
     });
   }
-  log_('Налаштування змінено із сайту: ' + on.join(', ') + '; ' + (city ? city.name : '') + ' + ' + radius + ' км');
+  log_('Налаштування змінено із сайту: ' + on.join(', ') + '; міста ' + ids.join(', ') + ' + ' + radius + ' км');
 }
 
 // Збір запускається окремим одноразовим тригером, щоб сайт не чекав 4 хвилини.
@@ -381,7 +394,8 @@ function Collector_() {
   // а всі оголошення якнайшвидше перечитуються з OLX.
   this.migrate = (this.state.schema || 1) < 2;
   // Змінили місто чи радіус — старі оголошення з іншої зони прибираємо.
-  this.areaSig = this.s.OLX_CITY_ID + '|' + this.s.RADIUS_KM;
+  this.cities = cities_(this.s);
+  this.areaSig = this.cities.map(c => c.id).sort((a, b) => a - b).join(',') + '|' + this.s.RADIUS_KM;
   const areaChanged = this.state.area_sig && this.state.area_sig !== this.areaSig;
   if (areaChanged) this.state.last_run = 0;
   this.cats = {};
@@ -509,14 +523,16 @@ Collector_.prototype.collect = function () {
   const done = {};
   for (const g of this.groups) {
     for (const cid of g.ids) {
-      if (done[cid]) continue;
-      done[cid] = true;
+     for (const city of this.cities) {
+      const dk = cid + '|' + city.id;
+      if (done[dk]) continue;
+      done[dk] = true;
       let kept = 0;
       for (let page = 0; page < pages; page++) {
         if (this.blocked || timeLeft_() < 60000) break;
         const r = olx_('/offers/', {
           offset: page * 50, limit: 50, category_id: cid,
-          city_id: this.s.OLX_CITY_ID, distance: this.s.RADIUS_KM, sort_by: 'created_at:desc',
+          city_id: city.id, distance: this.s.RADIUS_KM, sort_by: 'created_at:desc',
         });
         this.c.requests++;
         if (r.code === 403) {
@@ -542,7 +558,8 @@ Collector_.prototype.collect = function () {
         if (oldest != null && oldest < cutoff) break;
         if (!((r.json.links || {}).next)) break;
       }
-      console.log(g.name + ' (категорія OLX ' + cid + '): ' + kept + ' оголошень');
+      console.log(g.name + ', ' + city.name + ' (категорія OLX ' + cid + '): ' + kept + ' оголошень');
+     }
     }
   }
 };
@@ -646,8 +663,10 @@ Collector_.prototype.save = function () {
   writeFile_('meta.json', {
     updated: this.now,
     area: {
-      type: 'circle', name: this.s.CITY_NAME + ' + ' + this.s.RADIUS_KM + ' км',
-      lat: Number(this.s.CENTER_LAT), lon: Number(this.s.CENTER_LNG), radius_km: Number(this.s.RADIUS_KM),
+      type: 'circles', name: this.cities.map(c => c.name).join(', ') + ' + ' + this.s.RADIUS_KM + ' км',
+      lat: this.cities[0] ? this.cities[0].lat : 48.5, lon: this.cities[0] ? this.cities[0].lng : 32,
+      radius_km: Number(this.s.RADIUS_KM),
+      circles: this.cities.map(c => ({ name: c.name, lat: c.lat, lon: c.lng, radius_km: Number(this.s.RADIUS_KM) })),
     },
     rates: this.rates, categories: catsMeta, warnings: this.warnings, runs,
   });

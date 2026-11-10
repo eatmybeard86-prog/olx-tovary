@@ -81,7 +81,7 @@ function net(listing, details) {
 
 const files = {};
 const sheets = {
-  'Налаштування': [['Ключ', 'Значення'], ['OLX_CITY_ID', 121], ['RADIUS_KM', 50]],
+  'Налаштування': [['Ключ', 'Значення'], ['OLX_CITY_IDS', '121'], ['RADIUS_KM', 50]],
   'Категорії': [['Збирати', 'Ключ', 'Назва', 'Іконка', 'Ids'],
     ['так', 'computers', 'Комп\'ютери', '💻', '38, 1502'], ['ні', 'tv', 'ТВ', '📺', '420'], ['так', 'electronics', 'Інша', '📱', '37']],
   'Лог': [['Час', 'Повідомлення']],
@@ -131,18 +131,21 @@ assert.match(JSON.parse(files['meta.json']).warnings.join(' '), /403/);
 const q = (p) => JSON.parse(env.doGet({ parameter: p }));
 let st0 = q({ action: 'settings' });
 assert.deepStrictEqual(st0.categories.filter((c) => c.on).map((c) => c.key), ['computers', 'electronics']);
-const saved = q({ action: 'save', cats: 'tv', city: 268, radius: 30 });
+const saved = q({ action: 'save', cats: 'tv', cities: '268,280,999', radius: 30 });
 assert.ok(saved.ok);
 assert.deepStrictEqual(saved.categories.filter((c) => c.on).map((c) => c.key), ['tv']);
-assert.strictEqual(saved.city, 268); assert.strictEqual(saved.radius, 30);
+assert.deepStrictEqual(saved.selected, [268, 280]); assert.strictEqual(saved.radius, 30);
 assert.ok(q({ action: 'collect' }).collectQueued);
 q({ action: 'collect' });
 assert.strictEqual(sheets.__triggers.length, 1, 'лише один запланований збір');
 // збір у новому місті: старі оголошення очищено, нова категорія
-env = makeEnv((url) => { if (url.includes('bank.gov.ua')) return [200, []]; const u = new URL(url); if (u.searchParams.get('limit') === '1') return [200, { data: [] }]; assert.strictEqual(u.searchParams.get('city_id'), '268'); return [200, { data: [], links: {} }]; }, files, sheets);
+const seenCities = new Set();
+env = makeEnv((url) => { if (url.includes('bank.gov.ua')) return [200, []]; const u = new URL(url); if (u.searchParams.get('limit') === '1') return [200, { data: [] }]; seenCities.add(u.searchParams.get('city_id')); return [200, { data: [], links: {} }]; }, files, sheets);
 env.collectNow();
 assert.strictEqual(sheets.__triggers.length, 0);
 const meta3 = JSON.parse(files['meta.json']);
 assert.deepStrictEqual(meta3.categories.map((c) => c.key), ['tv']);
-assert.strictEqual(meta3.area.name, 'Київ + 30 км');
+assert.strictEqual(meta3.area.name, 'Київ, Харків + 30 км');
+assert.deepStrictEqual([...seenCities].sort(), ['268', '280']);
+assert.strictEqual(meta3.area.circles.length, 2);
 console.log('Усі перевірки Code.gs пройдено ✔');

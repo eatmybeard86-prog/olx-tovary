@@ -352,9 +352,10 @@
   function initMap() {
     if (map || !window.L) return;
     const a = meta?.area || {};
-    map = L.map('map').setView([a.lat || 49.0, a.lon || 31.3], a.type === 'circle' ? 10 : 6);
+    map = L.map('map').setView([a.lat || 49.0, a.lon || 31.3], a.type === 'circle' || a.type === 'circles' ? 10 : 6);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
     if (a.type === 'circle') areaLayer = L.circle([a.lat, a.lon], { radius: a.radius_km * 1000, color: '#888', dashArray: '6 6', fill: false, interactive: false }).addTo(map);
+    if (a.type === 'circles') areaLayer = L.featureGroup((a.circles || []).map((c) => L.circle([c.lat, c.lon], { radius: c.radius_km * 1000, color: '#888', dashArray: '6 6', fill: false, interactive: false }))).addTo(map);
     if (a.type === 'bbox') areaLayer = L.rectangle([[a.south, a.west], [a.north, a.east]], { color: '#888', dashArray: '6 6', fill: false, interactive: false }).addTo(map);
     if (a.type === 'polygon') areaLayer = L.polygon(a.points, { color: '#888', dashArray: '6 6', fill: false, interactive: false }).addTo(map);
     if (areaLayer) map.fitBounds(areaLayer.getBounds());
@@ -518,25 +519,33 @@
     $('#setBody').innerHTML = `
       <div class="fld"><span>Категорії, які збирати</span>
         <div class="set-cats">${s.categories.map((c) => `<label><input type="checkbox" data-setcat="${esc(c.key)}" ${c.on ? 'checked' : ''}> ${esc(c.icon)} ${esc(c.name)}</label>`).join('')}</div></div>
-      <div class="range">
-        <label class="fld" style="flex:2"><span>Місто</span><select id="setCity">${s.cities.map((c) => `<option value="${c.id}" ${c.id === s.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
-        <label class="fld" style="flex:1"><span>Радіус, км</span><input id="setRadius" type="number" min="1" max="300" value="${s.radius}"></label>
-      </div>
-      <p class="muted">Останній збір: ${s.lastRun ? dateStr(s.lastRun) : 'ще не було'}. Далі збір іде щогодини сам. Зміна міста чи радіусу очищає старі оголошення.</p>
+      <div class="fld"><span>Міста — можна кілька, до ${s.maxCities}</span>
+        <div class="set-cats set-cities">${s.cities.map((c) => `<label><input type="checkbox" data-setcity="${c.id}" ${s.selected.includes(c.id) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('')}</div></div>
+      <label class="fld" style="max-width:220px"><span>Радіус навколо кожного міста, км</span><input id="setRadius" type="number" min="1" max="300" value="${s.radius}"></label>
+      <p class="muted">Останній збір: ${s.lastRun ? dateStr(s.lastRun) : 'ще не було'}. Далі збір іде щогодини сам. Зміна міст чи радіусу очищає старі оголошення.</p>
       <p class="set-msg" id="setMsg" ${msg ? '' : 'hidden'}>${esc(msg || '')}</p>
       <div class="range">
         <button class="btn ghost" id="setSave">Зберегти</button>
         <button class="btn" id="setRun">Зберегти і зібрати зараз</button>
       </div>`;
+    const limitCities = () => {
+      const boxes = [...document.querySelectorAll('[data-setcity]')];
+      const n = boxes.filter((b) => b.checked).length;
+      boxes.forEach((b) => { b.disabled = !b.checked && n >= s.maxCities; });
+    };
+    document.querySelectorAll('[data-setcity]').forEach((b) => b.addEventListener('change', limitCities));
+    limitCities();
     $('#setSave').onclick = () => saveSettings(false);
     $('#setRun').onclick = () => saveSettings(true);
   }
   async function saveSettings(run) {
     const cats = [...document.querySelectorAll('[data-setcat]:checked')].map((i) => i.dataset.setcat);
     if (!cats.length) return renderSettingsMsg('Виберіть хоча б одну категорію.');
+    const cities = [...document.querySelectorAll('[data-setcity]:checked')].map((i) => i.dataset.setcity);
+    if (!cities.length) return renderSettingsMsg('Виберіть хоча б одне місто.');
     $('#setSave').disabled = $('#setRun').disabled = true;
     try {
-      let r = await api({ action: 'save', cats: cats.join(','), city: $('#setCity').value, radius: $('#setRadius').value });
+      let r = await api({ action: 'save', cats: cats.join(','), cities: cities.join(','), radius: $('#setRadius').value });
       if (r.error) return renderSettingsMsg('⚠️ ' + r.error);
       setState = r;
       if (run) {
