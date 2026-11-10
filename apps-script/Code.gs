@@ -314,8 +314,10 @@ Collector_.prototype.run = function () {
     this.warnings.push('Не вибрано жодної категорії: поставте «так» на аркуші «Категорії».');
   }
   this.rates = getRates_();
+  console.log('Збір нових оголошень: ' + this.groups.map(g => g.name).join(', '));
   this.collect();
-  if (timeLeft_() > 40000) this.check();
+  if (timeLeft_() > 40000) { console.log('Перевірка відомих оголошень…'); this.check(); }
+  console.log('Збереження…');
   this.prune();
   this.computeStats();
   this.save();
@@ -329,13 +331,42 @@ Collector_.prototype.leafInfo = function (leaf) {
   const r = olx_('/offers/', { category_id: leaf, limit: 1, offset: 0 });
   this.c.requests++;
   const tg = (((((r.json || {}).metadata || {}).adverts || {}).config || {}).targeting) || {};
+  return this.saveLeaf(leaf, tg);
+};
+
+// Невідомі підкатегорії визначаємо паралельно, щоб перший збір не тягнувся.
+Collector_.prototype.prefetchLeaves = function (offers) {
+  const need = [];
+  offers.forEach(o => {
+    const lf = (o.category || {}).id;
+    if (lf && !this.state.leaves[String(lf)] && need.indexOf(lf) < 0) need.push(lf);
+  });
+  for (let i = 0; i < need.length && !this.blocked && timeLeft_() > 60000; i += 20) {
+    const batch = need.slice(i, i + 20);
+    let resps;
+    try {
+      resps = UrlFetchApp.fetchAll(batch.map(lf => ({
+        url: API + '/offers/?' + qs_({ category_id: lf, limit: 1, offset: 0 }), headers: HEADERS, muteHttpExceptions: true,
+      })));
+    } catch (e) { return; }
+    this.c.requests += batch.length;
+    resps.forEach((r, j) => {
+      if (r.getResponseCode() !== 200) return;
+      let tg = {};
+      try { tg = JSON.parse(r.getContentText()).metadata.adverts.config.targeting || {}; } catch (e) { return; }
+      this.saveLeaf(batch[j], tg);
+    });
+  }
+};
+
+Collector_.prototype.saveLeaf = function (leaf, tg) {
   const chain = String(tg.cat_id || '').split('|').map(Number).filter(n => n > 0);
   if (!chain.length) return null;
   const depth = chain.length;
   // У метаданих OLX назви рівнів 0 і 1 переставлені місцями.
   const name = depth >= 3 ? tg.cat_l2_name : depth === 2 ? tg.cat_l0_name : (tg.cat_l1_name || tg.cat_l0_name);
   const info = { chain, name: name || ('Категорія ' + leaf) };
-  this.state.leaves[k] = info;
+  this.state.leaves[String(leaf)] = info;
   return info;
 };
 
@@ -406,6 +437,7 @@ Collector_.prototype.collect = function () {
         const data = (r.json || {}).data || [];
         if (!data.length) break;
         const promoted = ((r.json.metadata || {}).promoted) || [];
+        this.prefetchLeaves(data);
         let oldest = null;
         data.forEach((o, i) => {
           if ((o.status || 'active') === 'active') {
@@ -420,7 +452,7 @@ Collector_.prototype.collect = function () {
         if (oldest != null && oldest < cutoff) break;
         if (!((r.json.links || {}).next)) break;
       }
-      Logger.log(g.key + ' / ' + cid + ': ' + kept);
+      console.log(g.name + ' (категорія OLX ' + cid + '): ' + kept + ' оголошень');
     }
   }
 };
