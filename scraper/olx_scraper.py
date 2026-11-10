@@ -328,8 +328,7 @@ class Scraper:
             st, js = self.http.get_json(f"{API}/friendly-links/query-params/{path}/")
             if st == 403:
                 self.blocked = True
-                self.warnings.append("OLX не пускає запити з цієї мережі (403). Запускайте збирач "
-                                     "на своєму комп'ютері: scripts/run_local.")
+                self.warnings.append("OLX відхилив запити збирача (403 Forbidden), оголошення не оновлено.")
                 return None
             cid = ((js or {}).get("data") or {}).get("category_id")
         if cid is None and len(segs) >= 2:
@@ -474,8 +473,7 @@ class Scraper:
             self.counters["listing_requests"] += 1
             if st == 403:
                 self.blocked = True
-                self.warnings.append("OLX не пускає запити з цієї мережі (403). Запускайте збирач "
-                                     "на своєму комп'ютері: scripts/run_local.")
+                self.warnings.append("OLX відхилив запити збирача (403 Forbidden), оголошення не оновлено.")
                 return
             if not js or not js.get("data"):
                 if st and st not in (200, 400, 404):
