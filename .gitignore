@@ -1,5 +1,2 @@
-data/
 _site/
-__pycache__/
-*.pyc
-.data-work/
+node_modules/

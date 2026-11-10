@@ -31,16 +31,20 @@
   const cache = {};
 
   // ------------------------------------------------------------------ завантаження
+  const DATA_URL = (window.CONFIG && window.CONFIG.DATA_URL || '').trim();
   async function getJSON(name) {
-    const r = await fetch(DATA + name + '?t=' + Date.now(), { cache: 'no-store' });
+    const url = DATA_URL ? `${DATA_URL}?f=${encodeURIComponent(name)}&t=${Date.now()}` : `${DATA}${name}?t=${Date.now()}`;
+    const r = await fetch(url, { cache: 'no-store' });
     if (!r.ok) throw new Error(name + ': ' + r.status);
-    return r.json();
+    const js = await r.json();
+    if (js && js.error) throw new Error(name + ': ' + js.error);
+    return js;
   }
 
   async function init() {
     try { meta = await getJSON('meta.json'); }
     catch (e) {
-      $('#list').innerHTML = `<div class="empty">Даних ще немає. Збирач запускається щогодини; після першого запуску тут з'являться оголошення.<br><small>${esc(e.message)}</small></div>`;
+      $('#list').innerHTML = `<div class="empty">Даних ще немає. Перевірте, що в config.js вказано адресу веб-застосунку Apps Script, вибрано категорії в Google-таблиці і пройшов перший збір.<br><small>${esc(e.message)}</small></div>`;
       bindUI(); return;
     }
     rates = meta.rates || rates;

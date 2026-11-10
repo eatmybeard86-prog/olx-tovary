@@ -1,74 +1,31 @@
-name: Оновлення оголошень
+name: Публікація сайту
 
+# Сайт публікується на GitHub Pages при кожній зміні коду.
+# Оголошення збирає Google Apps Script (apps-script/Code.gs), сайт бере їх звідти.
 on:
-  schedule:
-    - cron: '25 * * * *'  # щогодини (UTC), о :25 — публікує свіжі дані з гілки data
-  workflow_dispatch:       # кнопка «Run workflow» для ручного запуску
   push:
-    paths: ['config.json', 'index.html', 'app.js', 'style.css', 'scraper/**', '.github/workflows/update.yml']
+    paths: ['index.html', 'app.js', 'style.css', 'config.js', '.github/workflows/update.yml']
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
 concurrency:
-  group: olx-update
-  cancel-in-progress: false
+  group: pages
+  cancel-in-progress: true
 
 jobs:
-  update:
+  deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 50
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Попередні дані (гілка data)
-        run: |
-          mkdir -p data
-          if git ls-remote --exit-code --heads origin data >/dev/null; then
-            git fetch --depth 1 origin data
-            git --work-tree=data checkout FETCH_HEAD -- .
-            git reset -q
-          fi
-          ls -la data
-
-      - name: Тести збирача
-        run: python -m unittest discover -s scraper
-
-      # OLX не пускає запити з серверів GitHub (відповідає 403), тому за замовчуванням
-      # оголошення збирає ваш комп'ютер (scripts/run_local.*), а тут лише публікується сайт.
-      # Щоб збирати тут, створіть змінну репозиторію SCRAPE_IN_CLOUD = true.
-      - name: Збір оголошень з OLX
-        if: vars.SCRAPE_IN_CLOUD == 'true'
-        run: python scraper/olx_scraper.py --config config.json --data data
-
-      - name: Зберегти дані (гілка data, без історії)
-        if: vars.SCRAPE_IN_CLOUD == 'true'
-        run: |
-          cd data
-          git init -q
-          git checkout -q -b data
-          git add -A
-          git -c user.name="olx-bot" -c user.email="actions@github.com" commit -qm "Дані $(date -u +%F_%H:%M)"
-          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
-          rm -rf .git
-
       - name: Зібрати сайт
-        run: |
-          mkdir -p _site/data
-          cp index.html app.js style.css _site/
-          cp data/meta.json data/stats.json data/cat-*.json _site/data/ 2>/dev/null || echo "Даних ще немає"
-          ls data/*.json >/dev/null 2>&1 || true
-          du -sh _site/data
-
+        run: mkdir _site && cp index.html app.js style.css config.js _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
