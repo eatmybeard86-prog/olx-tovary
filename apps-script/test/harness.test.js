@@ -86,7 +86,10 @@ const sheets = {
     ['так', 'computers', 'Комп\'ютери', '💻', '38, 1502'], ['ні', 'tv', 'ТВ', '📺', '420'], ['так', 'electronics', 'Інша', '📱', '37']],
   'Лог': [['Час', 'Повідомлення']],
 };
-let env = makeEnv(net([offer(1, 501, 20000, { params: [{ key: 'ram', name: 'ОЗП', type: 'select', value: { key: '16gb', label: '16 ГБ' } }] }),
+let env = makeEnv(net([offer(1, 501, 20000, { params: [{ key: 'ram', name: 'ОЗП', type: 'select', value: { key: '16gb', label: '16 ГБ' } },
+  { key: 'brand', name: 'Марка', type: 'select', value: { key: '2526', label: 'Samsung' } },
+  { key: 'year', name: 'Рік', type: 'input', value: { key: '2015', label: '2015' } },
+  { key: 'mileage', name: 'Пробіг', type: 'input', value: { key: '150000', label: '150 000 км' } }] }),
   offer(2, 701, 300, { cur: 'USD' }), offer(3, 701, 5000, { prev: 6000 })], {}), files, sheets);
 env.collectAll();
 const comp = JSON.parse(files['cat-computers.json']), el = JSON.parse(files['cat-electronics.json']);
@@ -94,6 +97,11 @@ assert.deepStrictEqual(comp.offers.map((o) => o.id), [1]);
 assert.deepStrictEqual(el.offers.map((o) => o.id).sort(), [2, 3]);
 assert.ok(!('cat-tv.json' in files), 'вимкнена категорія не збирається');
 assert.strictEqual(comp.dict.ram.o['16gb'], '16 ГБ');
+assert.strictEqual(comp.dict.brand.t, 'sel', 'марка з числовим ключем — список');
+assert.strictEqual(comp.dict.brand.o['2526'], 'Samsung');
+assert.strictEqual(comp.offers[0].pr.brand, '2526');
+assert.strictEqual(comp.dict.year.t, 'num');
+assert.strictEqual(comp.dict.mileage.t, 'num');
 assert.strictEqual(el.offers.find((o) => o.id === 2).pu, 12000);
 assert.deepStrictEqual(el.offers.find((o) => o.id === 3).ph.map((x) => x[1]), [6000, 5000]);
 assert.strictEqual(comp.subs['501'], 'Лист 501');

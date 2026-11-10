@@ -348,7 +348,11 @@ function parseOffer_(o) {
     if (typeof val !== 'object') return;
     const vkey = val.key, label = val.label;
     const n = vkey != null ? num_(String(vkey)) : null;
-    if (n != null && !(String(vkey).length > 1 && String(vkey)[0] === '0')) {
+    // Число — лише коли підпис теж є цим числом (рік, пробіг, діагональ).
+    // Марки, моделі тощо мають числовий ключ-ідентифікатор, але текстовий підпис — це вибір зі списку.
+    const labelNum = label != null ? num_(String(label).replace(/[^\d.,-]/g, '')) : n;
+    const isNumber = n != null && labelNum === n && !(String(vkey).length > 1 && String(vkey)[0] === '0');
+    if (isNumber) {
       rec.pr[key] = n; dict[key] = { n: name, t: 'num' };
     } else if (vkey != null) {
       rec.pr[key] = String(vkey);
@@ -388,6 +392,9 @@ function Collector_() {
   this.groups = this.allGroups.filter(g => g.on);
   this.state = readFile_('state.json', {});
   this.state.leaves = this.state.leaves || {};
+  // Версія 2: виправлено розпізнавання списків (марка тощо) — словники фільтрів перебудовуються,
+  // а всі оголошення якнайшвидше перечитуються з OLX.
+  this.migrate = (this.state.schema || 1) < 2;
   // Змінили місто чи радіус — старі оголошення з іншої зони прибираємо.
   this.areaSig = this.s.OLX_CITY_ID + '|' + this.s.RADIUS_KM;
   const areaChanged = this.state.area_sig && this.state.area_sig !== this.areaSig;
@@ -397,7 +404,8 @@ function Collector_() {
     const d = areaChanged ? {} : readFile_('cat-' + g.key + '.json', {});
     const offers = {};
     (d.offers || []).forEach(o => { offers[String(o.id)] = o; });
-    this.cats[g.key] = { offers, dict: d.dict || {}, subs: d.subs || {} };
+    if (this.migrate) Object.keys(offers).forEach(id => { offers[id].lc = 0; });
+    this.cats[g.key] = { offers, dict: this.migrate ? {} : (d.dict || {}), subs: d.subs || {} };
   });
   this.stats = readFile_('stats.json', {});
   this.warnings = [];
@@ -636,6 +644,7 @@ Collector_.prototype.computeStats = function () {
 Collector_.prototype.save = function () {
   if (!this.blocked) this.state.last_run = this.now;
   this.state.area_sig = this.areaSig;
+  this.state.schema = 2;
   writeFile_('state.json', this.state);
   writeFile_('stats.json', this.stats);
   const catsMeta = [];

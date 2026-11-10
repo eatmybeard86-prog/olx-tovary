@@ -149,10 +149,13 @@
         return group(d.n, on ? 1 : 0, on || keys.indexOf(k) < 4,
           `<div class="range"><input type="number" data-pmin="${esc(k)}" placeholder="від ${fmt(s.min)}" value="${f?.min ?? ''}"><input type="number" data-pmax="${esc(k)}" placeholder="до ${fmt(s.max)}" value="${f?.max ?? ''}"></div>`);
       }
-      const vals = Object.keys(s.vals).sort((a, b) => s.vals[b] - s.vals[a]);
+      // Вибрані — вгорі, далі за кількістю оголошень, як на OLX
+      const fsel = new Set(Array.isArray(f) ? f : []);
+      const vals = Object.keys(s.vals).sort((a, b) => (fsel.has(b) - fsel.has(a)) || (s.vals[b] - s.vals[a]));
       if (vals.length < 2) return '';
       const sel = new Set(Array.isArray(f) ? f : []);
       return group(d.n, sel.size, sel.size > 0 || keys.indexOf(k) < 4,
+        (vals.length > 8 ? '<input type="search" class="opt-search" placeholder="Знайти у списку…">' : '') +
         `<div class="opts">${vals.map((v) => `<label><input type="checkbox" data-pk="${esc(k)}" data-pv="${esc(v)}" ${sel.has(v) ? 'checked' : ''}>${esc(d.o?.[v] || v)}<small>${s.vals[v]}</small></label>`).join('')}</div>`);
     }).join('');
   }
@@ -576,8 +579,15 @@
     }
     $('#cats').addEventListener('click', (e) => { const b = e.target.closest('button[data-cat]'); if (b) selectCat(b.dataset.cat); });
     document.querySelectorAll('.view-switch button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
-    $('#sidebar').addEventListener('input', debounced);
-    $('#sidebar').addEventListener('change', debounced);
+    $('#sidebar').addEventListener('input', (e) => {
+      if (e.target.classList.contains('opt-search')) {
+        const q = e.target.value.trim().toLowerCase();
+        e.target.nextElementSibling.querySelectorAll('label').forEach((l) => { l.hidden = q && !l.textContent.toLowerCase().includes(q); });
+        return;
+      }
+      debounced();
+    });
+    $('#sidebar').addEventListener('change', (e) => { if (!e.target.classList.contains('opt-search')) debounced(); });
     $('#fSort').addEventListener('change', debounced);
     $('#btnMore').addEventListener('click', renderMore);
     $('#list').addEventListener('click', (e) => { const c = e.target.closest('.card'); if (c) openOffer(c.dataset.id); });

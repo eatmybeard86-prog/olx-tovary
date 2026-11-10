@@ -116,3 +116,5 @@ dialog::backdrop { background: rgba(0,0,0,.5); }
 .set-msg { background: var(--accent-soft); padding: 8px 10px; border-radius: 8px; font-size: 14px; }
 #dlgSet .range .btn { flex: 1; }
 #dlgSet #setBody { padding: 0 16px 16px; }
+.opt-search { margin-top: 6px; padding: 5px 8px; font-size: 13px; }
+.fgroup .opts label[hidden] { display: none; }
