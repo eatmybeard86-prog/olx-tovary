@@ -157,16 +157,105 @@ function writeFile_(name, obj) {
 
 // ───────────────────────── Веб-застосунок: дані для сайту ─────────────────────────
 
+const CITIES = [
+  { id: 121, name: 'Дніпро', lat: 48.4647, lng: 35.0462 },
+  { id: 268, name: 'Київ', lat: 50.4501, lng: 30.5234 },
+  { id: 280, name: 'Харків', lat: 49.9935, lng: 36.2304 },
+  { id: 62, name: 'Одеса', lat: 46.4825, lng: 30.7233 },
+  { id: 176, name: 'Львів', lat: 49.8397, lng: 24.0297 },
+  { id: 194, name: 'Запоріжжя', lat: 47.8388, lng: 35.1396 },
+];
+
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
 function doGet(e) {
-  const f = (e && e.parameter && e.parameter.f) || '';
-  let txt;
+  const p = (e && e.parameter) || {};
+  const f = p.f || '';
   if (/^(meta|stats|cat-[a-z0-9_-]+)\.json$/i.test(f)) {
     const it = folder_().getFilesByName(f);
-    txt = it.hasNext() ? it.next().getBlob().getDataAsString('UTF-8') : JSON.stringify({ error: 'not found' });
-  } else {
-    txt = JSON.stringify({ ok: true, hint: 'Додайте ?f=meta.json' });
+    const txt = it.hasNext() ? it.next().getBlob().getDataAsString('UTF-8') : JSON.stringify({ error: 'not found' });
+    return ContentService.createTextOutput(txt).setMimeType(ContentService.MimeType.JSON);
   }
-  return ContentService.createTextOutput(txt).setMimeType(ContentService.MimeType.JSON);
+  try {
+    if (p.action === 'settings') return json_(siteSettings_());
+    if (p.action === 'save' || p.action === 'collect') {
+      const pin = checkPin_(p.pin);
+      if (pin.error) return json_(pin);
+      if (p.action === 'save') saveSiteSettings_(p);
+      else scheduleCollect_();
+      return json_(Object.assign({ ok: true }, siteSettings_(), pin.created ? { pinCreated: true } : {}));
+    }
+  } catch (err) {
+    return json_({ error: err.message });
+  }
+  return json_({ ok: true, hint: 'Додайте ?f=meta.json' });
+}
+
+// PIN захищає зміну налаштувань із сайту: адреса веб-застосунку видна в коді сайту.
+// Перший збережений PIN запам'ятовується; скинути — видалити властивість SITE_PIN у властивостях скрипта.
+function checkPin_(pin) {
+  pin = String(pin || '').trim();
+  if (!/^\d{4,12}$/.test(pin)) return { error: 'Введіть PIN — від 4 до 12 цифр.' };
+  const props = PropertiesService.getScriptProperties();
+  const saved = props.getProperty('SITE_PIN');
+  if (!saved) { props.setProperty('SITE_PIN', pin); return { created: true }; }
+  if (saved !== pin) return { error: 'Невірний PIN.' };
+  return {};
+}
+
+function siteSettings_() {
+  const s = getSettings_();
+  const lastRun = (readFile_('state.json', {}) || {}).last_run || null;
+  const running = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'collectNow');
+  return {
+    categories: getGroups_().map(g => ({ key: g.key, name: g.name, icon: g.icon, on: g.on })),
+    city: Number(s.OLX_CITY_ID), radius: Number(s.RADIUS_KM), cities: CITIES,
+    hasPin: !!PropertiesService.getScriptProperties().getProperty('SITE_PIN'),
+    lastRun, collectQueued: running,
+  };
+}
+
+function saveSiteSettings_(p) {
+  const ss = ss_();
+  const on = String(p.cats || '').split(',').map(x => x.trim()).filter(Boolean);
+  const ct = ss.getSheetByName(SHEETS.CATEGORIES);
+  if (ct) {
+    const rows = ct.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i][1] && String(rows[i][4]).trim()) {
+        ct.getRange(i + 1, 1).setValue(on.indexOf(String(rows[i][1]).trim()) >= 0 ? 'так' : 'ні');
+      }
+    }
+  }
+  const city = CITIES.find(c => c.id === Number(p.city));
+  const radius = Math.max(1, Math.min(300, Number(p.radius) || 50));
+  const vals = { RADIUS_KM: radius };
+  if (city) Object.assign(vals, { OLX_CITY_ID: city.id, CITY_NAME: city.name, CENTER_LAT: city.lat, CENTER_LNG: city.lng });
+  const st = ss.getSheetByName(SHEETS.SETTINGS);
+  if (st) {
+    const rows = st.getDataRange().getValues();
+    Object.keys(vals).forEach(k => {
+      const i = rows.findIndex(r => String(r[0]).trim() === k);
+      if (i > 0) st.getRange(i + 1, 2).setValue(vals[k]);
+      else st.appendRow([k, vals[k], '']);
+    });
+  }
+  log_('Налаштування змінено із сайту: ' + on.join(', ') + '; ' + (city ? city.name : '') + ' + ' + radius + ' км');
+}
+
+// Збір запускається окремим одноразовим тригером, щоб сайт не чекав 4 хвилини.
+function scheduleCollect_() {
+  const pending = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'collectNow');
+  if (!pending) ScriptApp.newTrigger('collectNow').timeBased().after(1000).create();
+}
+
+function collectNow() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'collectNow') ScriptApp.deleteTrigger(t);
+  });
+  collectAll();
 }
 
 // ───────────────────────── Запити до OLX ─────────────────────────
@@ -299,9 +388,13 @@ function Collector_() {
   this.groups = this.allGroups.filter(g => g.on);
   this.state = readFile_('state.json', {});
   this.state.leaves = this.state.leaves || {};
+  // Змінили місто чи радіус — старі оголошення з іншої зони прибираємо.
+  this.areaSig = this.s.OLX_CITY_ID + '|' + this.s.RADIUS_KM;
+  const areaChanged = this.state.area_sig && this.state.area_sig !== this.areaSig;
+  if (areaChanged) this.state.last_run = 0;
   this.cats = {};
   this.groups.forEach(g => {
-    const d = readFile_('cat-' + g.key + '.json', {});
+    const d = areaChanged ? {} : readFile_('cat-' + g.key + '.json', {});
     const offers = {};
     (d.offers || []).forEach(o => { offers[String(o.id)] = o; });
     this.cats[g.key] = { offers, dict: d.dict || {}, subs: d.subs || {} };
@@ -542,6 +635,7 @@ Collector_.prototype.computeStats = function () {
 
 Collector_.prototype.save = function () {
   if (!this.blocked) this.state.last_run = this.now;
+  this.state.area_sig = this.areaSig;
   writeFile_('state.json', this.state);
   writeFile_('stats.json', this.stats);
   const catsMeta = [];

@@ -3,7 +3,8 @@ const fs = require('fs'), path = require('path'), vm = require('vm'), assert = r
 const code = fs.readFileSync(path.join(__dirname, '..', 'Code.gs'), 'utf8');
 
 function makeEnv(net, files, sheets) {
-  const props = {};
+  const props = sheets.__props || (sheets.__props = {});
+  const triggers = sheets.__triggers || (sheets.__triggers = []);
   const mkFile = (name) => ({
     getBlob: () => ({ getDataAsString: () => files[name] }),
     setContent: (t) => { files[name] = t; },
@@ -13,7 +14,11 @@ function makeEnv(net, files, sheets) {
     getFilesByName: (n) => { let done = !(n in files); return { hasNext: () => !done, next: () => { done = true; return mkFile(n); } }; },
     createFile: (n, t) => { files[n] = t; },
   };
-  const sheet = (rows) => ({ getDataRange: () => ({ getValues: () => rows }), insertRowAfter() {}, getRange: () => ({ setValues() {} }), getLastRow: () => rows.length, deleteRows() {} });
+  const sheet = (rows) => ({
+    getDataRange: () => ({ getValues: () => rows.map((r) => r.slice()) }), insertRowAfter() {},
+    getRange: (r, c) => ({ setValues() {}, setValue(v) { (rows[r - 1] = rows[r - 1] || [])[c - 1] = v; } }),
+    appendRow: (r) => rows.push(r), getLastRow: () => rows.length, deleteRows() {},
+  });
   const ss = { getId: () => 'S', getSheetByName: (n) => sheets[n] ? sheet(sheets[n]) : null };
   const resp = (code, body) => ({ getResponseCode: () => code, getContentText: () => JSON.stringify(body) });
   const ctx = {
@@ -21,6 +26,11 @@ function makeEnv(net, files, sheets) {
     PropertiesService: { getScriptProperties: () => ({ getProperty: (k) => props[k] || (k === 'folder_id' ? 'F' : null), setProperty: (k, v) => { props[k] = v; } }) },
     SpreadsheetApp: { openById: () => ss, getActive: () => ss, getUi: () => { throw new Error('no ui'); } },
     DriveApp: { getFolderById: () => folder, createFolder: () => folder },
+    ScriptApp: {
+      getProjectTriggers: () => triggers.slice(),
+      deleteTrigger: (t) => triggers.splice(triggers.indexOf(t), 1),
+      newTrigger: (fn) => ({ timeBased: () => ({ after: () => ({ create: () => triggers.push({ getHandlerFunction: () => fn }) }) }) }),
+    },
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
     Utilities: {
       sleep() {},
@@ -109,4 +119,25 @@ assert.ok(JSON.parse(env.doGet({ parameter: { f: '../state.json' } })).hint);
 env = makeEnv(() => [403, null], files, sheets);
 env.collectAll();
 assert.match(JSON.parse(files['meta.json']).warnings.join(' '), /403/);
+// Налаштування з сайту
+const q = (p) => JSON.parse(env.doGet({ parameter: p }));
+let st0 = q({ action: 'settings' });
+assert.deepStrictEqual(st0.categories.filter((c) => c.on).map((c) => c.key), ['computers', 'electronics']);
+assert.strictEqual(st0.hasPin, false);
+assert.match(q({ action: 'save', cats: 'tv', city: 268, radius: 30 }).error, /PIN/);
+const saved = q({ action: 'save', pin: '1234', cats: 'tv', city: 268, radius: 30 });
+assert.ok(saved.ok && saved.pinCreated);
+assert.deepStrictEqual(saved.categories.filter((c) => c.on).map((c) => c.key), ['tv']);
+assert.strictEqual(saved.city, 268); assert.strictEqual(saved.radius, 30);
+assert.match(q({ action: 'collect', pin: '9999' }).error, /Невірний/);
+assert.ok(q({ action: 'collect', pin: '1234' }).collectQueued);
+q({ action: 'collect', pin: '1234' });
+assert.strictEqual(sheets.__triggers.length, 1, 'лише один запланований збір');
+// збір у новому місті: старі оголошення очищено, нова категорія
+env = makeEnv((url) => { if (url.includes('bank.gov.ua')) return [200, []]; const u = new URL(url); if (u.searchParams.get('limit') === '1') return [200, { data: [] }]; assert.strictEqual(u.searchParams.get('city_id'), '268'); return [200, { data: [], links: {} }]; }, files, sheets);
+env.collectNow();
+assert.strictEqual(sheets.__triggers.length, 0);
+const meta3 = JSON.parse(files['meta.json']);
+assert.deepStrictEqual(meta3.categories.map((c) => c.key), ['tv']);
+assert.strictEqual(meta3.area.name, 'Київ + 30 км');
 console.log('Усі перевірки Code.gs пройдено ✔');

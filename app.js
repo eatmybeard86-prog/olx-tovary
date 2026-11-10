@@ -44,7 +44,7 @@
   async function init() {
     try { meta = await getJSON('meta.json'); }
     catch (e) {
-      $('#list').innerHTML = `<div class="empty">Даних ще немає. Перевірте, що в config.js вказано адресу веб-застосунку Apps Script, вибрано категорії в Google-таблиці і пройшов перший збір.<br><small>${esc(e.message)}</small></div>`;
+      $('#list').innerHTML = `<div class="empty">Даних ще немає. Виберіть, що шукати, і запустіть перший збір.<br><br><button class="btn" data-open-settings>⚙️ Що шукати</button><br><br><small>${esc(e.message)}</small></div>`;
       bindUI(); return;
     }
     rates = meta.rates || rates;
@@ -497,7 +497,83 @@
   let tmr;
   const debounced = () => { clearTimeout(tmr); tmr = setTimeout(() => { readBaseFilters(); apply(); }, 250); };
 
+  // ------------------------------------------------------------------ налаштування пошуку (зберігаються в Apps Script)
+  let setState = null;
+  async function api(params) {
+    const r = await fetch(`${DATA_URL}?${new URLSearchParams(params)}&t=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) throw new Error('Помилка ' + r.status);
+    return r.json();
+  }
+  async function openSettings() {
+    $('#dlgSet').showModal();
+    $('#setBody').innerHTML = '<p class="muted">Завантаження…</p>';
+    try { setState = await api({ action: 'settings' }); renderSettings(); }
+    catch (e) { $('#setBody').innerHTML = `<p>Не вдалося завантажити налаштування: ${esc(e.message)}</p>`; }
+  }
+  function renderSettings(msg) {
+    const s = setState;
+    const pin = LS.get('pin', '');
+    $('#setBody').innerHTML = `
+      <div class="fld"><span>Категорії, які збирати</span>
+        <div class="set-cats">${s.categories.map((c) => `<label><input type="checkbox" data-setcat="${esc(c.key)}" ${c.on ? 'checked' : ''}> ${esc(c.icon)} ${esc(c.name)}</label>`).join('')}</div></div>
+      <div class="range">
+        <label class="fld" style="flex:2"><span>Місто</span><select id="setCity">${s.cities.map((c) => `<option value="${c.id}" ${c.id === s.city ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></label>
+        <label class="fld" style="flex:1"><span>Радіус, км</span><input id="setRadius" type="number" min="1" max="300" value="${s.radius}"></label>
+      </div>
+      <label class="fld"><span>${s.hasPin ? 'PIN для змін' : 'Придумайте PIN (4–12 цифр) — він захистить налаштування від чужих'}</span>
+        <input id="setPin" type="password" inputmode="numeric" autocomplete="off" value="${esc(pin)}"></label>
+      <p class="muted">Останній збір: ${s.lastRun ? dateStr(s.lastRun) : 'ще не було'}. Далі збір іде щогодини сам. Зміна міста чи радіусу очищає старі оголошення.</p>
+      <p class="set-msg" id="setMsg" ${msg ? '' : 'hidden'}>${esc(msg || '')}</p>
+      <div class="range">
+        <button class="btn ghost" id="setSave">Зберегти</button>
+        <button class="btn" id="setRun">Зберегти і зібрати зараз</button>
+      </div>`;
+    $('#setSave').onclick = () => saveSettings(false);
+    $('#setRun').onclick = () => saveSettings(true);
+  }
+  async function saveSettings(run) {
+    const pin = $('#setPin').value.trim();
+    const cats = [...document.querySelectorAll('[data-setcat]:checked')].map((i) => i.dataset.setcat);
+    if (!cats.length) return renderSettingsMsg('Виберіть хоча б одну категорію.');
+    $('#setSave').disabled = $('#setRun').disabled = true;
+    try {
+      let r = await api({ action: 'save', pin, cats: cats.join(','), city: $('#setCity').value, radius: $('#setRadius').value });
+      if (r.error) return renderSettingsMsg('⚠️ ' + r.error);
+      LS.set('pin', pin);
+      setState = r;
+      if (run) {
+        r = await api({ action: 'collect', pin });
+        if (r.error) return renderSettingsMsg('⚠️ ' + r.error);
+        setState = r;
+        renderSettings('✅ Збережено. Збір запущено — це до 4 хвилин. Сторінка оновиться сама, коли з\'являться дані.');
+        waitForCollect();
+      } else {
+        renderSettings('✅ Збережено. Нові налаштування застосуються під час наступного збору (щогодини) або натисніть «Зібрати зараз».');
+      }
+    } catch (e) { renderSettingsMsg('⚠️ ' + e.message); }
+  }
+  function renderSettingsMsg(m) {
+    const el = $('#setMsg'); el.hidden = false; el.textContent = m;
+    $('#setSave').disabled = $('#setRun').disabled = false;
+  }
+  function waitForCollect() {
+    const before = meta?.updated || 0;
+    const started = Date.now();
+    const tick = async () => {
+      if (Date.now() - started > 9 * 60 * 1000) return;
+      try { const m = await getJSON('meta.json'); if (m.updated > before) { location.reload(); return; } } catch { /* ще немає */ }
+      setTimeout(tick, 20000);
+    };
+    setTimeout(tick, 30000);
+  }
+
   function bindUI() {
+    if (DATA_URL) {
+      $('#btnSettings').hidden = false;
+      $('#btnSettings').addEventListener('click', openSettings);
+      $('#setClose').addEventListener('click', () => $('#dlgSet').close());
+      document.addEventListener('click', (e) => { if (e.target.closest('[data-open-settings]')) openSettings(); });
+    }
     $('#cats').addEventListener('click', (e) => { const b = e.target.closest('button[data-cat]'); if (b) selectCat(b.dataset.cat); });
     document.querySelectorAll('.view-switch button').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
     $('#sidebar').addEventListener('input', debounced);

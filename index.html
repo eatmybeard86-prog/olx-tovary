@@ -17,6 +17,7 @@
   <h1>🔎 Пошук товарів OLX</h1>
   <div id="updated" class="muted"></div>
   <div class="spacer"></div>
+  <button id="btnSettings" class="btn small" hidden>⚙️ Що шукати</button>
   <div class="view-switch" role="tablist">
     <button data-view="list" class="active">Список</button>
     <button data-view="map">Карта</button>
@@ -98,6 +99,11 @@
 <dialog id="dlg">
   <div class="dlg-head"><h2 id="dlgTitle"></h2><button class="icon-btn" id="dlgClose">✕</button></div>
   <div id="dlgBody"></div>
+</dialog>
+
+<dialog id="dlgSet">
+  <div class="dlg-head"><h2>Що шукати</h2><button class="icon-btn" id="setClose">✕</button></div>
+  <div id="setBody"><p class="muted">Завантаження…</p></div>
 </dialog>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
